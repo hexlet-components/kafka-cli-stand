@@ -9,6 +9,14 @@ local fast = new Mapping<String, Step> {
   ["rumdl"] = Builtins.rumdl
   ["typos"] = Builtins.typos
   ["jactionlint"] = Builtins.jactionlint
+  ["compose-config"] {
+    glob = List("compose.yml")
+    check = "docker compose config --quiet"
+  }
+  ["shellcheck"] {
+    glob = List("bin/*")
+    check = "shellcheck {{files}}"
+  }
 }
 
 local all = (fast) {

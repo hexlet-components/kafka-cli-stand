@@ -1,0 +1,84 @@
+name: kafka-cli-stand
+
+# Все контейнеры живут в одном сетевом пространстве сервиса net.
+# Поэтому адреса localhost:9092, localhost:9093 и localhost:9094 одинаково
+# работают и с компьютера, и из контейнера cli, и брокеры находят друг друга
+# по тем же адресам, которые отдают клиентам.
+
+x-broker: &broker
+  image: apache/kafka:4.4.0
+  network_mode: service:net
+  restart: unless-stopped
+  depends_on:
+    - controller
+
+x-broker-environment: &broker-environment
+  CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+  KAFKA_PROCESS_ROLES: broker
+  KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+  KAFKA_CONTROLLER_QUORUM_VOTERS: 100@localhost:9099
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+  KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+  # Учебное ускорение: удаление по сроку хранения и уплотнение
+  # проверяются раз в секунду вместо пяти минут и пятнадцати секунд.
+  KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 1000
+  KAFKA_LOG_CLEANER_BACKOFF_MS: 1000
+  KAFKA_HEAP_OPTS: -Xms128m -Xmx256m
+
+services:
+  net:
+    image: apache/kafka:4.4.0
+    entrypoint: ["sleep", "infinity"]
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+      - "9094:9094"
+
+  controller:
+    image: apache/kafka:4.4.0
+    network_mode: service:net
+    restart: unless-stopped
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 100
+      KAFKA_PROCESS_ROLES: controller
+      KAFKA_LISTENERS: CONTROLLER://localhost:9099
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 100@localhost:9099
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT
+      KAFKA_HEAP_OPTS: -Xms128m -Xmx256m
+
+  broker-1:
+    <<: *broker
+    environment:
+      <<: *broker-environment
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENERS: PLAINTEXT://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+
+  broker-2:
+    <<: *broker
+    environment:
+      <<: *broker-environment
+      KAFKA_NODE_ID: 2
+      KAFKA_LISTENERS: PLAINTEXT://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9093
+
+  broker-3:
+    <<: *broker
+    environment:
+      <<: *broker-environment
+      KAFKA_NODE_ID: 3
+      KAFKA_LISTENERS: PLAINTEXT://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9094
+
+  # Консольные утилиты Kafka для тех, у кого они не установлены:
+  # docker compose exec cli bash, рабочий каталог /opt/kafka.
+  cli:
+    image: apache/kafka:4.4.0
+    network_mode: service:net
+    working_dir: /opt/kafka
+    entrypoint: ["sleep", "infinity"]

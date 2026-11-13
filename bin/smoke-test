@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Поднимает стенд, проверяет три брокера, запись и чтение, сужение ISR
+# при остановке брокера, и гасит стенд.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+kafka() { docker compose exec -T cli "$@"; }
+cleanup() { docker compose down --volumes >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+
+wait_for() {
+  local description=$1
+  shift
+  for _ in $(seq 1 60); do
+    if "$@"; then return 0; fi
+    sleep 2
+  done
+  echo "не дождались: $description" >&2
+  exit 1
+}
+
+brokers_up() {
+  [ "$(kafka bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 2>/dev/null | grep -c '^localhost:909')" = 3 ]
+}
+
+isr_is() {
+  kafka bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic smoke \
+    | grep -q "Isr: $1"$'\t'
+}
+
+docker compose up --detach --quiet-pull
+wait_for "трёх брокеров" brokers_up
+
+kafka bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic smoke \
+  --replica-assignment 3:1:2
+echo smoke-message | kafka bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic smoke
+kafka bin/kafka-console-consumer.sh --bootstrap-server localhost:9093 --topic smoke \
+  --from-beginning --max-messages 1 --timeout-ms 20000 2>/dev/null | grep -qx smoke-message
+
+docker compose stop broker-3
+wait_for "ISR из двух брокеров" isr_is "1,2"
+docker compose start broker-3
+wait_for "возврата брокера 3 в ISR" isr_is "1,2,3"
+
+echo "стенд работает"
